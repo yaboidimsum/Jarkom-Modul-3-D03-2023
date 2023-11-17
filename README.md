@@ -246,27 +246,405 @@ Perkenalkan kami dari kelas `Jaringan Komputer D Kelompok D03`, dengan anggota s
 ## Soal-11
 > Lalu buat untuk setiap request yang mengandung /its akan di proxy passing menuju halaman https://www.its.ac.id. (11) hint: (proxy_pass)
 
+### Script
+
+Dengan memanfaatkan fitur proxy_pass, kita dapat melaksanakan penyesuaian konfigurasi tambahan pada server Nginx sebagaimana diuraikan berikut ini.
+
+```sh
+location ~ /its {
+    proxy_pass https://www.its.ac.id;
+    proxy_set_header Host www.its.ac.id;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+Berikut ini adalah keseluruhan skripnya.
+```sh
+echo 'upstream phpworker {
+    server 10.23.3.1;
+    server 10.23.3.2;
+    server 10.23.3.3;
+}
+
+server {
+    listen 80;
+    server_name granz.channel.d03.com www.granz.channel.d03.com;
+
+    root /var/www/html;
+    index index.html index.htm index.nginx-debian.html;
+
+    location / {
+        proxy_pass http://phpworker;
+    }
+
+    location ~ /its {
+        proxy_pass https://www.its.ac.id;
+        proxy_set_header Host www.its.ac.id;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}' > /etc/nginx/sites-available/lb_php
+```
+Makna dari skrip di atas adalah bahwa ketika akses dilakukan pada endpoint yang mengandung /its, akan diarahkan oleh proxy_pass menuju https://www.its.ac.id. Oleh karena itu, saat melakukan pengujian pada klien Revolte atau Richter, kita dapat menggunakan perintah berikut:
+```sh
+lynx www.granz.channel.d03.com/its
+```
+
+### Result
+![Alt text](./images/11-image.png)
+
 ## Soal-12
 > Selanjutnya LB ini hanya boleh diakses oleh client dengan IP [Prefix IP].3.69, [Prefix IP].3.70, [Prefix IP].4.167, dan [Prefix IP].4.168. (12) hint: (fixed in dulu clientnya)
+
+### Script
+Dengan menerapkan aturan allow untuk sejumlah alamat IP tertentu, kita dapat memberikan akses yang ketat hanya kepada alamat IP yang telah dipilih. Berikut adalah konfigurasi yang diterapkan pada server Nginx.
+
+```sh
+location / {
+    allow 10.23.3.69;
+    allow 10.23.3.70;
+    allow 10.23.4.167;
+    allow 10.23.4.168;
+    deny all;
+    proxy_pass http://phpworker;
+}
+```
+
+Berikut ini adalah keseluruhan skripnya.
+```sh
+echo 'upstream worker {
+    server 10.23.3.1;
+    server 10.23.3.2;
+    server 10.23.3.3;
+}
+
+server {
+    listen 80;
+    server_name granz.channel.d03.com www.granz.channel.d03.com;
+
+    root /var/www/html;
+    index index.html index.htm index.nginx-debian.html;
+
+    location / {
+        allow 10.23.3.69;
+        allow 10.23.3.70;
+        allow 10.23.4.167;
+        allow 10.23.4.168;
+        deny all;
+        proxy_pass http://phpworker;
+    }
+
+    location /its {
+        proxy_pass https://www.its.ac.id;
+        proxy_set_header Host www.its.ac.id;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}' > /etc/nginx/sites-available/lb_php
+```
+Di sini, kami hanya memberikan izin akses kepada beberapa alamat IP sesuai dengan ketentuan yang ada, sementara menolak seluruh alamat IP selain yang telah ditentukan dalam peraturan. Untuk menguji fungsionalitasnya, Anda dapat membuka klien yang memiliki alamat IP `192.173.3.69, 192.173.3.70, 192.173.4.167, atau 192.173.4.168.`
+
+
+### Result
+
+#### IP Deny
+
+Disini, kami menggunakan IP 10.23.3.16 untuk menguji fungsionalitasnya. Hasilnya, akses ditolak oleh server Nginx.
+
+![Alt text](./images/12-00-image.png)
+![Alt text](./images/12-01-image.png)
+
+#### IP Allow
+
+Dikarenakan IP Client yang telah diatur oleh DHCP, sementara untuk testing harus memakai ip berikut: `10.23.3.69, 10.23.3.70, 10.23.4.167, 10.23.4.168`, kami menambahkan ip tambahan yang sedang dipakai pada client untuk melakukan testing.
+
+```sh
+location / {
+    allow 10.23.3.69;
+    allow 10.23.3.70;
+    allow 10.23.3.17;
+    allow 10.23.4.167;
+    allow 10.23.4.168;
+    deny all;
+    proxy_pass http://worker;
+}
+```
+
+![Alt text](./images/12-02-image.png)
+![Alt text](./images/12-03-image.png)
+
+Terdapat cara lain untuk melakukan testing seperti menetapkan static IP pada client, namun kami tidak melakukannya karena tidak sesuai dengan ketentuan soal.
 
 ## Soal-13
 > Semua data yang diperlukan, diatur pada Denken dan harus dapat diakses oleh Frieren, Flamme, dan Fern. (13)
 
+ Buka Database Server Denken dan lakukan konfigurasi sebagai berikut
+### Script
+
+ ```sh
+ # Db akan diakses oleh 3 worker, maka 
+echo '# This group is read both by the client and the server
+# use it for options that affect everything
+[client-server]
+
+# Import all .cnf files from configuration directory
+!includedir /etc/mysql/conf.d/
+!includedir /etc/mysql/mariadb.conf.d/
+
+# Options affecting the MySQL server (mysqld)
+[mysqld]
+skip-networking=0
+skip-bind-address
+' > /etc/mysql/my.cnf
+ ```
+
+Selanjutnya, pastikan untuk mengganti [bind-address] pada berkas /etc/mysql/mariadb.conf.d/50-server.cnf menjadi 0.0.0.0.
+
+```sh
+cd /etc/mysql/mariadb.conf.d/50-server.cnf
+
+# Changes
+bind-address            = 0.0.0.0
+```
+Pastikan untuk merestart layanan MySQL dengan perintah 'service mysql restart'. Setelah itu, jalankan perintah berikut
+
+```sh
+mysql -u root -p
+Enter password: 
+
+CREATE USER 'kelompokd03'@'%' IDENTIFIED BY 'passwordd03';
+CREATE USER 'kelompokd03'@'localhost' IDENTIFIED BY 'passwordd03';
+CREATE DATABASE dbkelompokd03;
+GRANT ALL PRIVILEGES ON *.* TO 'kelompokd03'@'%';
+GRANT ALL PRIVILEGES ON *.* TO 'kelompokd03'@'localhost';
+FLUSH PRIVILEGES;
+```
+![Alt text](./images/13-image.png)
+### Result
+Setelah itu, lakukan pemeriksaan pada worker Laravel. Di sini, kami akan memeriksa pekerja dengan nama Fern menggunakan perintah shell berikut:
+
+```sh
+mariadb --host=10.23.2.2 --port=3306 --user=kelompokd03 --password=passwordd03 dbkelompokd03 -e "SHOW DATABASES;"
+```
+
+Worker Fern
+![Alt text](./images/13-01-image.png)
+
+Worker Flamme
+![Alt text](./images/13-02-image.png)
+
+Worker Frieren
+![Alt text](./images/13-03-image.png)
+
 ## Soal-14
 > Frieren, Flamme, dan Fern memiliki Riegel Channel sesuai dengan quest guide berikut. Jangan lupa melakukan instalasi PHP8.0 dan Composer (14)
 
+Lakukan konfigurasi pada worker Laravel dengan perintah berikut:
+
+### Script
+
+Installasi Composer
+```sh
+wget https://getcomposer.org/download/2.0.13/composer.phar
+chmod +x composer.phar
+mv composer.phar /usr/local/bin/composer
+```
+Langkah berikutnya adalah menginstal Git dan melakukan cloning terhadap sumber daya yang telah disediakan
+
+```sh
+apt-get install git -y
+cd /var/www && git clone https://github.com/martuafernando/laravel-praktikum-jarkom
+cd /var/www/laravel-praktikum-jarkom && composer update
+```
+
+Setelah berhasil mengklon sumber daya tersebut, saatnya untuk melakukan konfigurasi pada setiap pekerja sebagai berikut:
+
+```sh
+cd /var/www/laravel-praktikum-jarkom && cp .env.example .env
+echo 'APP_NAME=Laravel
+APP_ENV=local
+APP_KEY=
+APP_DEBUG=true
+APP_URL=http://localhost
+
+LOG_CHANNEL=stack
+LOG_DEPRECATIONS_CHANNEL=null
+LOG_LEVEL=debug
+
+DB_CONNECTION=mysql
+DB_HOST=10.23.2.2
+DB_PORT=3306
+DB_DATABASE=dbkelompokd03
+DB_USERNAME=kelompokd03
+DB_PASSWORD=passwordd03
+
+BROADCAST_DRIVER=log
+CACHE_DRIVER=file
+FILESYSTEM_DISK=local
+QUEUE_CONNECTION=sync
+SESSION_DRIVER=file
+SESSION_LIFETIME=120
+
+MEMCACHED_HOST=127.0.0.1
+
+REDIS_HOST=127.0.0.1
+REDIS_PASSWORD=null
+REDIS_PORT=6379
+
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_ENCRYPTION=null
+MAIL_FROM_ADDRESS="hello@example.com"
+MAIL_FROM_NAME="${APP_NAME}"
+
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_DEFAULT_REGION=us-east-1
+AWS_BUCKET=
+AWS_USE_PATH_STYLE_ENDPOINT=false
+
+PUSHER_APP_ID=
+PUSHER_APP_KEY=
+PUSHER_APP_SECRET=
+PUSHER_HOST=
+PUSHER_PORT=443
+PUSHER_SCHEME=https
+PUSHER_APP_CLUSTER=mt1
+
+VITE_PUSHER_APP_KEY="${PUSHER_APP_KEY}"
+VITE_PUSHER_HOST="${PUSHER_HOST}"
+VITE_PUSHER_PORT="${PUSHER_PORT}"
+VITE_PUSHER_SCHEME="${PUSHER_SCHEME}"
+VITE_PUSHER_APP_CLUSTER="${PUSHER_APP_CLUSTER}"' > /var/www/laravel-praktikum-jarkom/.env
+cd /var/www/laravel-praktikum-jarkom && php artisan key:generate
+cd /var/www/laravel-praktikum-jarkom && php artisan config:cache
+cd /var/www/laravel-praktikum-jarkom && php artisan migrate
+cd /var/www/laravel-praktikum-jarkom && php artisan db:seed
+cd /var/www/laravel-praktikum-jarkom && php artisan storage:link
+cd /var/www/laravel-praktikum-jarkom && php artisan jwt:secret
+cd /var/www/laravel-praktikum-jarkom && php artisan config:clear
+chown -R www-data.www-data /var/www/laravel-praktikum-jarkom/storage
+```
+
+Setelah semua proses berjalan tanpa mendapatkan kesalahan, lanjutkan dengan konfigurasi Nginx pada masing-masing pekerja, di mana portnya diatur sebagai berikut:
+
+```sh
+10.23.4.1:8001; # Fern 
+10.23.4.2:8002; # Flamme
+10.23.4.3:8003; # Frieren
+```
+
+Sertakan konfigurasi Nginx yang sesuai sebagai berikut:
+
+```sh
+echo 'server {
+    listen <insert port>;
+
+    root /var/www/laravel-praktikum-jarkom/public;
+
+    index index.php index.html index.htm;
+    server_name _;
+
+    location / {
+            try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # pass PHP scripts to FastCGI server
+    location ~ \.php$ {
+      include snippets/fastcgi-php.conf;
+      fastcgi_pass unix:/var/run/php/php8.0-fpm.sock;
+    }
+
+    location ~ /\.ht {
+            deny all;
+    }
+
+    error_log /var/log/nginx/implementasi_error.log;
+    access_log /var/log/nginx/implementasi_access.log;
+}' > /etc/nginx/sites-available/laravel-worker
+```
+Di mana `<insert worker>` adalah port dari masing-masing worker.
+
+### Result
+
+Setelah berhasil mengkonfigurasi seluruh pekerja, saatnya melakukan pengujian sebagai berikut:
+
+```sh
+lynx localhost:[PORT]
+```
+
+Di mana PORT yang tersedia adalah 8001, 8002, dan 8003. Sesuaikan dengan konfigurasi Nginx yang telah diatur sebelumnya.
+
+![Alt text](./images/14-image.png)
+
+
 ## Soal-15
 > Riegel Channel memiliki beberapa endpoint yang harus ditesting sebanyak 100 request dengan 10 request/second. Tambahkan response dan hasil testing pada grimoire. **POST /auth/register** (15)
+
+"Untuk menyelesaikan tugas ini, diperlukan pengujian menggunakan `Apache Benchmark` pada salah satu worker. Pada tahap ini, kami akan menggunakan worker Laravel dengan nama `Fern`, yang akan diuji oleh client `Revolte`. Sebelum melakukan pengujian, gunakan file `.json` sebagai body yang akan dikirim ke endpoint` /api/auth/register`, sebagai berikut:"
+
+### Script
+
+```sh
+echo '
+{
+  "username": "kelompokd03",
+  "password": "passwordd03"
+}' > register.json
+```
+Lalu, lakukanlah command berikut pada client Revolte:
+```sh
+ab -n 100 -c 10 -p register.json -T application/json http://10.23.4.1:8001/api/auth/register
+```
+
+### Result
+
+Terjadi kesalahan dalam pengiriman sebanyak `100 permintaan` karena pada tabel pengguna (users) terdapat `unique constraint`. Oleh karena itu, data username yang dimasukkan tidak boleh identik, menyebabkan hanya 1 permintaan yang dapat diproses, sementara 99 permintaan lainnya tidak dapat diproses.
+
+```php
+public function up()
+    {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('username')->unique();
+            $table->string('password');
+            $table->rememberToken();
+            $table->timestamps();
+        });
+    }
+
+```
+
+![Alt text](./images/15-image.png)
 
 
 ## Soal-16
 > Riegel Channel memiliki beberapa endpoint yang harus ditesting sebanyak 100 request dengan 10 request/second. Tambahkan response dan hasil testing pada grimoire. **POST /auth/login** (16)
 
+### Script
+
+
+### Result
+
 ## Soal-17
 > Riegel Channel memiliki beberapa endpoint yang harus ditesting sebanyak 100 request dengan 10 request/second. Tambahkan response dan hasil testing pada grimoire. **GET /me** (17)
 
+### Script
+
+### Result
+
 ## Soal-18
 > Untuk memastikan ketiganya bekerja sama secara adil untuk mengatur Riegel Channel maka implementasikan Proxy Bind pada Eisen untuk mengaitkan IP dari Frieren, Flamme, dan Fern. (18)
+
+### Script
+
+### Result
 
 ## Soal-19
 > Untuk meningkatkan performa dari Worker, coba implementasikan PHP-FPM pada Frieren, Flamme, dan Fern. Untuk testing kinerja naikkan 
@@ -277,5 +655,13 @@ Perkenalkan kami dari kelas `Jaringan Komputer D Kelompok D03`, dengan anggota s
 ```
 > sebanyak tiga percobaan dan lakukan testing sebanyak 100 request dengan 10 request/second kemudian berikan hasil analisisnya pada Grimoire.(19)
 
+### Script
+
+### Result
+
 ## Soal-20
 > Nampaknya hanya menggunakan PHP-FPM tidak cukup untuk meningkatkan performa dari worker maka implementasikan Least-Conn pada Eisen. Untuk testing kinerja dari worker tersebut dilakukan sebanyak 100 request dengan 10 request/second. (20)
+
+### Script
+
+### Result
