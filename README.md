@@ -345,7 +345,7 @@ server {
     }
 }' > /etc/nginx/sites-available/lb_php
 ```
-Di sini, kami hanya memberikan izin akses kepada beberapa alamat IP sesuai dengan ketentuan yang ada, sementara menolak seluruh alamat IP selain yang telah ditentukan dalam peraturan. Untuk menguji fungsionalitasnya, Anda dapat membuka klien yang memiliki alamat IP `192.173.3.69, 192.173.3.70, 192.173.4.167, atau 192.173.4.168.`
+Di sini, kami hanya memberikan izin akses kepada beberapa alamat IP sesuai dengan ketentuan yang ada, sementara menolak seluruh alamat IP selain yang telah ditentukan dalam peraturan. Untuk menguji fungsionalitasnya, Anda dapat membuka klien yang memiliki alamat IP `10.23.3.69, 10.23.3.70, 10.23.4.167, atau 10.23.4.168.`
 
 
 ### Result
