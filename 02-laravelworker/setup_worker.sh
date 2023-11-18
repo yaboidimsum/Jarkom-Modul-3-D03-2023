@@ -10,6 +10,7 @@ sh -c 'echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://pa
 apt-get update
 apt-get install php8.0-mbstring php8.0-xml php8.0-cli php8.0-common php8.0-intl php8.0-opcache php8.0-readline php8.0-mysql php8.0-fpm php8.0-curl unzip wget -y
 apt-get install nginx -y
+apt-get install htop -y
 service nginx start
 service php8.0-fpm start
 

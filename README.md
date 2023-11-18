@@ -627,24 +627,113 @@ public function up()
 ## Soal-16
 > Riegel Channel memiliki beberapa endpoint yang harus ditesting sebanyak 100 request dengan 10 request/second. Tambahkan response dan hasil testing pada grimoire. **POST /auth/login** (16)
 
+Untuk mengerjakan soal ini, diperlukan pengujian menggunakan `Apache Benchmark` pada salah satu `worker`. Pada tahap ini, kami akan menggunakan worker Laravel dengan nama `Fern`, yang akan diuji oleh client `Revolte`. Sebelum melakukan pengujian, kami menggunakan file `.json` sebagai body yang akan dikirim ke endpoint `/api/auth/login`, sebagai berikut:
+
 ### Script
 
+```sh
+echo '
+{
+  "username": "kelompokd03",
+  "password": "passwordd03"
+}' > login.json
+```
+Lalu, lakukanlah command berikut pada client Revolte:
+
+```sh
+ab -n 100 -c 10 -p login.json -T application/json http://10.23.4.1:8001/api/auth/login
+```
 
 ### Result
+
+Terjadi kesalahan dalam pengiriman 100 permintaan karena satu pekerja tidak mampu menangani permintaan sebanyak itu dalam waktu yang telah ditentukan. Dengan kata lain, CPU yang tersedia tidak mampu untuk memproses semua permintaan. Akibatnya, hanya `60` permintaan yang berhasil diproses, sedangkan `40` permintaan lainnya tidak dapat diproses.
+
+![Alt text](./images/16-image.png)
 
 ## Soal-17
 > Riegel Channel memiliki beberapa endpoint yang harus ditesting sebanyak 100 request dengan 10 request/second. Tambahkan response dan hasil testing pada grimoire. **GET /me** (17)
 
+Untuk mengerjakan soal ini, diperlukan pengujian menggunakan `Apache Benchmark` pada salah satu `worker`. Pada tahap ini, kami akan menggunakan worker Laravel dengan nama `Fern`, yang akan diuji oleh client `Revolte`. Sebelum melakukan pengujian, ada beberapa konfigurasi yang harus dilakukan:
+
 ### Script
 
+Peroleh token terlebih dahulu sebelum mengakses endpoint /api/me. Untuk mendapatkan token, gunakan perintah berikut:
+
+```sh
+curl -X POST -H "Content-Type: application/json" -d @login.json http://10.23.4.1:8001/api/auth/login > login_output.txt
+```
+![Alt text](./images/17-image.png)
+
+Selanjutnya, eksekusi perintah berikut untuk mengatur token secara global dan lanjutkan testing.
+
+```sh
+token=$(cat login_output.txt | jq -r '.token')
+
+ab -n 100 -c 10 -H "Authorization: Bearer $token" http://10.23.4.1:8001/api/me
+```
+
 ### Result
+
+Terjadi kesalahan dalam pengiriman 100 permintaan karena satu pekerja tidak mampu menangani permintaan sebanyak itu dalam waktu yang telah ditentukan. Dengan kata lain, CPU yang tersedia tidak mampu untuk memproses semua permintaan. Akibatnya, hanya `60` permintaan yang berhasil diproses, sedangkan `40` permintaan lainnya tidak dapat diproses.
+
+![Alt text](./images/17-01-image.png)
 
 ## Soal-18
 > Untuk memastikan ketiganya bekerja sama secara adil untuk mengatur Riegel Channel maka implementasikan Proxy Bind pada Eisen untuk mengaitkan IP dari Frieren, Flamme, dan Fern. (18)
 
+Karena hanya diberikan perintah agar ketiga pekerja berjalan secara adil, kami memberikan implementasi dari Load Balancing. Sesuai dengan definisinya, Load Balancing bertujuan untuk membagi beban kerja dengan merata. Berikut adalah konfigurasi Nginx yang sesuai:
+
 ### Script
 
+```sh
+echo 'upstream worker {
+    server 10.23.4.1:8001;
+    server 10.23.4.2:8002;
+    server 10.23.4.3:8003;
+}
+
+server {
+    listen 80;
+    server_name riegel.canyon.d03.com www.riegel.canyon.d03.com;
+
+    location / {
+        proxy_pass http://worker;
+    }
+} 
+' > /etc/nginx/sites-available/laravel-worker
+
+ln -s /etc/nginx/sites-available/laravel-worker /etc/nginx/sites-enabled/laravel-worker
+
+service nginx restart
+```
+
+**Catatan**: Berhati-hatilah dengan kemungkinan terjadi tabrakan port pada load balancer dengan worker PHP.
+
 ### Result
+
+Setelah mengonfigurasi load balancer pada Eisen, saatnya untuk melakukan pengujian menggunakan klien Revolte dengan menjalankan perintah berikut:
+
+```sh
+ab -n 100 -c 10 -p login.json -T application/json http://www.riegel.canyon.d03.com/api/auth/login
+```
+
+![Alt text](./images/18-image.png)
+
+Gunakan command berikut untuk melihat log pada worker Laravel:
+```sh
+cat /var/log/nginx/implementasi_access.log
+```
+**Fern**
+
+![Alt text](./images/18-01-image.png)
+
+**Flamme**
+
+![Alt text](./images/18-02-image.png)
+
+**Frieren**
+
+![Alt text](./images/18-03-image.png)
 
 ## Soal-19
 > Untuk meningkatkan performa dari Worker, coba implementasikan PHP-FPM pada Frieren, Flamme, dan Fern. Untuk testing kinerja naikkan 
@@ -655,13 +744,168 @@ public function up()
 ```
 > sebanyak tiga percobaan dan lakukan testing sebanyak 100 request dengan 10 request/second kemudian berikan hasil analisisnya pada Grimoire.(19)
 
+Untuk menyelesaikan soal ini, beberapa penjelasan penting perlu diperhatikan:
+
+1. `pm.max_children`: Menentukan jumlah maksimum pekerja PHP (proses anak) yang dapat berjalan secara bersamaan. Penting untuk disesuaikan dengan kapasitas sumber daya server. Jika terlalu rendah, server mungkin tidak mampu menangani banyak permintaan secara bersamaan. Sebaliknya, jika terlalu tinggi, dapat menyebabkan kelebihan beban dan kekurangan sumber daya.
+
+2. `pm.start_servers`: Menentukan jumlah pekerja PHP yang akan dimulai secara otomatis ketika PHP-FPM pertama kali dijalankan atau direstart. Ini membantu mengoptimalkan performa pada saat server pertama kali dimulai.
+
+3. `pm.min_spare_servers`: Menentukan jumlah minimum pekerja PHP yang tetap berjalan saat server berjalan. Penting untuk menjaga agar server tetap responsif terhadap permintaan, bahkan saat lalu lintas rendah.
+
+4. `pm.max_spare_servers`: Menentukan jumlah maksimum pekerja PHP yang dapat berjalan tetapi tidak menangani permintaan. Jumlah ini disesuaikan dengan kebutuhan untuk menangani lonjakan lalu lintas tanpa menambahkan terlalu banyak sumber daya ketika beban rendah.
+
+Akan ada empat konfigurasi terhadap proses package manager pada masing-masing pekerja yang akan dilakukan untuk testing.
+
 ### Script
 
+**Script Default**
+```sh
+echo '[www]
+user = www-data
+group = www-data
+listen = /run/php/php8.0-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system
+php_admin_flag[allow_url_fopen] = off
+
+; Choose how the process manager will control the number of child processes.
+
+pm = dynamic
+pm.max_children = 5
+pm.start_servers = 2
+pm.min_spare_servers = 1
+pm.max_spare_servers = 3 ' > /etc/php/8.0/fpm/pool.d/www.conf
+
+service php8.0-fpm restart
+```
+
+**Script Testing 1**
+```sh
+echo '[www]
+user = www-data
+group = www-data
+listen = /run/php/php8.0-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system
+php_admin_flag[allow_url_fopen] = off
+
+; Choose how the process manager will control the number of child processes.
+
+pm = dynamic
+pm.max_children = 10
+pm.start_servers = 6
+pm.min_spare_servers = 3
+pm.max_spare_servers = 10 ' > /etc/php/8.0/fpm/pool.d/www.conf
+
+service php8.0-fpm restart
+```
+
+**Script Testing 2**
+```sh
+echo '[www]
+user = www-data
+group = www-data
+listen = /run/php/php8.0-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system
+php_admin_flag[allow_url_fopen] = off
+
+; Choose how the process manager will control the number of child processes.
+
+pm = dynamic
+pm.max_children = 25
+pm.start_servers = 10
+pm.min_spare_servers = 5
+pm.max_spare_servers = 15 ' > /etc/php/8.0/fpm/pool.d/www.conf
+
+service php8.0-fpm restart
+```
+
+**Script Testing 3**
+```sh
+echo '[www]
+user = www-data
+group = www-data
+listen = /run/php/php8.0-fpm.sock
+listen.owner = www-data
+listen.group = www-data
+php_admin_value[disable_functions] = exec,passthru,shell_exec,system
+php_admin_flag[allow_url_fopen] = off
+
+; Choose how the process manager will control the number of child processes.
+
+pm = dynamic
+pm.max_children = 50
+pm.start_servers = 12
+pm.min_spare_servers = 5
+pm.max_spare_servers = 20 ' > /etc/php/8.0/fpm/pool.d/www.conf
+
+service php8.0-fpm restart
+```
+
 ### Result
+
+**Script Default**
+
+![Alt text](./images/19-00-image.png)
+
+**Script Testing 1**
+
+![Alt text](./images/19-01-image.png)
+
+**Script Testing 2**
+
+![Alt text](./images/19-02-image.png)
+
+**Script Testing 3**
+
+![Alt text](./images/19-03-image.png)
 
 ## Soal-20
 > Nampaknya hanya menggunakan PHP-FPM tidak cukup untuk meningkatkan performa dari worker maka implementasikan Least-Conn pada Eisen. Untuk testing kinerja dari worker tersebut dilakukan sebanyak 100 request dengan 10 request/second. (20)
 
+Karena konfigurasi proses pada masing-masing pekerja yang sebelumnya telah diatur pada package manager tidak memberikan hasil yang memadai untuk meningkatkan performa pekerja, oleh karena itu, kami menambahkan algoritma pada load balancer dengan menggunakan metode Least-Connection. Algoritma ini memberikan prioritas pembagian beban kepada pekerja yang memiliki kinerja paling rendah. Node master akan mencatat beban dan kinerja dari semua node, dan melakukan prioritas berdasarkan beban kinerja yang paling rendah. Dengan demikian, diharapkan tidak ada server dengan beban yang rendah.
+
 ### Script
 
+Pada `Eisen` lakukan konfigurasi berikut:
+
+```sh
+echo 'upstream worker {
+    least_conn;
+    server 10.23.4.1:8001;
+    server 10.23.4.2:8002;
+    server 10.23.4.3:8003;
+}
+
+server {
+    listen 80;
+    server_name riegel.canyon.d03.com www.riegel.canyon.d03.com;
+
+    location / {
+        proxy_pass http://laravelworker;
+    }
+} 
+' > /etc/nginx/sites-available/laravel-worker
+
+service nginx restart
+```
+
+**Catatan**: Kami menggunakan Script Testing 3 untuk melakukan testing.
+
+```sh
+pm = dynamic
+pm.max_children = 50
+pm.start_servers = 12
+pm.min_spare_servers = 5
+pm.max_spare_servers = 20 
+```
+
 ### Result
+
+Jika ditambahkan algoritma Load Balancing `Least-Connection`, hasil yang diperoleh menunjukkan peningkatan yang cukup signifikan, seperti berikut:
+
+![Alt text](./images/20-image.png)
